@@ -19,21 +19,25 @@ pipeline {
         }
         stage('Terraform Init') {
             steps {
-                sh 'terraform init'
+                dir('terraform') {
+                    sh 'terraform init'
+                }
             }
         }
         stage('Terraform Action') {
             steps {
-                script {
-                    if (params.ACTION == 'apply') {
-                        echo "Running Terraform Apply..."
-                        sh 'terraform plan -out=tfplan'
-                        input message: 'Do you want to apply these changes?', ok: 'Yes, Apply'
-                        sh 'terraform apply tfplan'
-                    } else if (params.ACTION == 'destroy') {
-                        echo "Running Terraform Destroy..."
-                        input message: 'WARNING: Are you sure you want to destroy all infrastructure?', ok: 'Yes, Destroy'
-                        sh 'terraform destroy -auto-approve'
+                dir('terraform') {
+                    script {
+                        if (params.ACTION == 'apply') {
+                            echo "Running Terraform Apply..."
+                            sh 'terraform plan -out=tfplan'
+                            input message: 'Do you want to apply these changes?', ok: 'Yes, Apply'
+                            sh 'terraform apply tfplan'
+                        } else if (params.ACTION == 'destroy') {
+                            echo "Running Terraform Destroy..."
+                            input message: 'WARNING: Are you sure you want to destroy all infrastructure?', ok: 'Yes, Destroy'
+                            sh 'terraform destroy -auto-approve'
+                        }
                     }
                 }
             }
