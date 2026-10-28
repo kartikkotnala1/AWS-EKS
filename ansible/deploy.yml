@@ -1,15 +1,16 @@
 ---
-- hosts: localhost
+- name: Deploy configurable image to AWS EKS
+  hosts: localhost
   connection: local
-  collections:
-    - community.kubernetes
-  tasks:
-    - name: Apply NGINX Deployment
-      community.kubernetes.k8s:
-        state: present
-        definition: "{{ lookup('file', 'manifests/deployment.yaml') | from_yaml }}"
+  gather_facts: false
 
-    - name: Apply NGINX Service
-      community.kubernetes.k8s:
+  tasks:
+    - name: Apply Kubernetes Deployment
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ lookup('template', 'manifests/deployment.yaml') | from_yaml }}"
+
+    - name: Apply Kubernetes Service
+      kubernetes.core.k8s:
         state: present
         definition: "{{ lookup('file', 'manifests/service.yaml') | from_yaml }}"
