@@ -14,4 +14,4 @@
     - name: Apply NGINX Service
       community.kubernetes.k8s:
         state: present
-        src: manifests/service.yaml
+        definition: "{{ lookup('template', 'manifests/service.yaml') | from_yaml }}"
