@@ -1,61 +1,78 @@
+
 pipeline {
     agent any
+
     parameters {
+        string(
+            name: 'IMAGE_NAME',
+            defaultValue: 'nginx',
+            description: 'Container image repository/name'
+        )
+        string(
+            name: 'IMAGE_VERSION',
+            defaultValue: 'latest',
+            description: 'Container image tag/version'
+        )
         string(
             name: 'REPLICAS',
             defaultValue: '2',
-            description: 'Number of NGINX pod replicas to deploy'
-        )
-        string(
-            name: 'NGINX_IMAGE',
-            defaultValue: 'nginx',
-            description: 'Container image name'
-        )
-        string(
-            name: 'NGINX_VERSION',
-            defaultValue: 'latest',
-            description: 'Container image version/tag'
+            description: 'Number of pod replicas'
         )
     }
+
     environment {
-        AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
+        AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
     }
+
     stages {
         stage('Checkout Code') {
             steps {
                 checkout scm
             }
         }
+
         stage('Configure Kubeconfig') {
             steps {
-                sh 'aws eks update-kubeconfig --region us-east-1 --name eks-cluster'
+                sh '''
+                    aws eks update-kubeconfig \
+                      --region us-east-1 \
+                      --name eks-cluster
+                '''
             }
         }
-        stage('Run Ansible Playbook') {
+
+        stage('Deploy Application') {
             steps {
                 dir('ansible') {
-                    echo "Running Ansible Deployment with ${params.REPLICAS} replicas using image ${params.NGINX_IMAGE}:${params.NGINX_VERSION}..."
-                    sh "ansible-playbook deploy.yml -e 'replicas=${params.REPLICAS}' -e 'nginx_image=${params.NGINX_IMAGE}' -e 'nginx_version=${params.NGINX_VERSION}'"
+                    echo "Deploying ${params.IMAGE_NAME}:${params.IMAGE_VERSION}"
+
+                    sh """
+                        ansible-playbook deploy.yml \
+                          -e 'replicas=${params.REPLICAS}' \
+                          -e 'image_name=${params.IMAGE_NAME}' \
+                          -e 'image_version=${params.IMAGE_VERSION}'
+                    """
                 }
             }
         }
+
         stage('Get Access URL') {
             steps {
                 script {
-                    def externalIp = sh(script: "kubectl get svc nginx-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'", returnStdout: true).trim()
-                    
-                    if (!externalIp) {
-                        externalIp = sh(script: "kubectl get svc nginx-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'", returnStdout: true).trim()
-                    }
-                    
-                    echo "===================================================="
-                    if (externalIp) {
-                        echo "NGINX is accessible at: http://${externalIp}"
+                    def hostname = sh(
+                        script: """
+                            kubectl get svc application-service \
+                              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    if (hostname) {
+                        echo "Application URL: http://${hostname}"
                     } else {
-                        echo "LoadBalancer is still provisioning. Run 'kubectl get svc nginx-service' later to retrieve the IP/Hostname."
+                        echo 'LoadBalancer is still provisioning.'
                     }
-                    echo "===================================================="
                 }
             }
         }
