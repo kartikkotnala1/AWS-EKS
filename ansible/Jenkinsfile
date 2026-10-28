@@ -1,15 +1,20 @@
 pipeline {
     agent any
     parameters {
-        choice(
-            name: 'ACTION',
-            choices: ['deploy', 'remove'],
-            description: 'Select deploy to run playbook or remove to clean up resources'
-        )
         string(
             name: 'REPLICAS',
             defaultValue: '2',
             description: 'Number of NGINX pod replicas to deploy'
+        )
+        string(
+            name: 'NGINX_IMAGE',
+            defaultValue: 'nginx',
+            description: 'Container image name'
+        )
+        string(
+            name: 'NGINX_VERSION',
+            defaultValue: 'latest',
+            description: 'Container image version/tag'
         )
     }
     environment {
@@ -30,15 +35,27 @@ pipeline {
         stage('Run Ansible Playbook') {
             steps {
                 dir('ansible') {
-                    script {
-                        if (params.ACTION == 'deploy') {
-                            echo "Running Ansible Deployment with ${params.REPLICAS} replicas..."
-                            sh "ansible-playbook deploy.yml -e 'replicas=${params.REPLICAS}'"
-                        } else if (params.ACTION == 'remove') {
-                            echo "Removing Kubernetes Resources..."
-                            sh 'kubectl delete -f manifests/ --ignore-not-found=true || true'
-                        }
+                    echo "Running Ansible Deployment with ${params.REPLICAS} replicas using image ${params.NGINX_IMAGE}:${params.NGINX_VERSION}..."
+                    sh "ansible-playbook deploy.yml -e 'replicas=${params.REPLICAS}' -e 'nginx_image=${params.NGINX_IMAGE}' -e 'nginx_version=${params.NGINX_VERSION}'"
+                }
+            }
+        }
+        stage('Get Access URL') {
+            steps {
+                script {
+                    def externalIp = sh(script: "kubectl get svc nginx-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'", returnStdout: true).trim()
+                    
+                    if (!externalIp) {
+                        externalIp = sh(script: "kubectl get svc nginx-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'", returnStdout: true).trim()
                     }
+                    
+                    echo "===================================================="
+                    if (externalIp) {
+                        echo "NGINX is accessible at: http://${externalIp}"
+                    } else {
+                        echo "LoadBalancer is still provisioning. Run 'kubectl get svc nginx-service' later to retrieve the IP/Hostname."
+                    }
+                    echo "===================================================="
                 }
             }
         }
