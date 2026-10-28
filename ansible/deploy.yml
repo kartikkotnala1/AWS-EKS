@@ -9,9 +9,9 @@
     - name: Apply NGINX Deployment
       community.kubernetes.k8s:
         state: present
-        definition: "{{ lookup('file', 'manifests/deployment.yaml') | from_yaml }}"
+        definition: "{{ lookup('template', 'manifests/deployment.yaml') | from_yaml }}"
 
     - name: Apply NGINX Service
       community.kubernetes.k8s:
         state: present
-        definition: "{{ lookup('file', 'manifests/service.yaml') | from_yaml }}"
+        definition: "{{ lookup('template', 'manifests/service.yaml') | from_yaml }}"
