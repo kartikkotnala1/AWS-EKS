@@ -3,15 +3,13 @@
   connection: local
   collections:
     - community.kubernetes
-  vars:
-    replicas: "{{ replicas | default(2) }}"
   tasks:
     - name: Apply NGINX Deployment
       community.kubernetes.k8s:
         state: present
-        definition: "{{ lookup('template', 'manifests/deployment.yaml') | from_yaml }}"
+        definition: "{{ lookup('file', 'manifests/deployment.yaml') | from_yaml }}"
 
     - name: Apply NGINX Service
       community.kubernetes.k8s:
         state: present
-        definition: "{{ lookup('template', 'manifests/service.yaml') | from_yaml }}"
+        definition: "{{ lookup('file', 'manifests/service.yaml') | from_yaml }}"
