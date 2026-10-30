@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -22,16 +23,16 @@ pipeline {
     }
 
     stages {
+
+        // 1. Checkout Code
         stage('Checkout Code') {
             steps {
                 checkout scm
             }
         }
 
+        // 2. Terraform Init - Both Apply and Destroy
         stage('Terraform Init') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
             steps {
                 dir('terraform') {
                     sh 'terraform init -reconfigure'
@@ -39,12 +40,56 @@ pipeline {
             }
         }
 
+        // 3. Kubernetes Cleanup - Only During Destroy
+        stage('Cleanup Kubernetes Resources') {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                sh '''
+                    if aws eks describe-cluster \
+                        --region us-east-1 \
+                        --name eks-cluster >/dev/null 2>&1; then
+
+                        echo "EKS cluster exists. Starting Kubernetes cleanup..."
+
+                        aws eks update-kubeconfig \
+                            --region us-east-1 \
+                            --name eks-cluster
+
+                        echo "Deleting NGINX LoadBalancer Service..."
+
+                        kubectl delete service application-service \
+                            --ignore-not-found=true \
+                            --wait=true \
+                            --timeout=180s
+
+                        echo "Deleting NGINX Deployment..."
+
+                        kubectl delete deployment application-deployment \
+                            --ignore-not-found=true \
+                            --wait=true \
+                            --timeout=180s
+
+                        echo "Kubernetes cleanup commands completed."
+
+                    else
+                        echo "EKS cluster does not exist. Skipping Kubernetes cleanup."
+                    fi
+                '''
+            }
+        }
+
+        // 4. Terraform Action
         stage('Terraform Action') {
             steps {
                 dir('terraform') {
                     script {
+
                         if (params.ACTION == 'apply') {
+
                             echo 'Running Terraform Plan...'
+
                             sh 'terraform plan -out=tfplan'
 
                             input(
@@ -55,6 +100,7 @@ pipeline {
                             sh 'terraform apply tfplan'
 
                         } else {
+
                             input(
                                 message: 'WARNING: Destroy all Terraform-managed infrastructure?',
                                 ok: 'Yes, Destroy'
@@ -67,6 +113,7 @@ pipeline {
             }
         }
 
+        // 5. Configure Kubeconfig - Only Apply
         stage('Configure Kubeconfig') {
             when {
                 expression { params.ACTION == 'apply' }
@@ -74,42 +121,47 @@ pipeline {
             steps {
                 sh '''
                     aws eks update-kubeconfig \
-                      --region us-east-1 \
-                      --name eks-cluster
+                        --region us-east-1 \
+                        --name eks-cluster
                 '''
             }
         }
 
+        // 6. Deploy NGINX - Only Apply
         stage('Deploy NGINX') {
             when {
                 expression { params.ACTION == 'apply' }
             }
             steps {
                 dir('ansible') {
+
                     echo "Deploying NGINX with ${params.REPLICAS} replicas"
 
                     sh """
                         ansible-playbook deploy.yml \
-                          -e 'replicas=${params.REPLICAS}'
+                            -e 'replicas=${params.REPLICAS}'
                     """
                 }
             }
         }
 
+        // 7. Get LoadBalancer URL - Only Apply
         stage('Get Access URL') {
             when {
                 expression { params.ACTION == 'apply' }
             }
             steps {
                 script {
+
                     def hostname = ''
 
                     for (int i = 0; i < 12; i++) {
+
                         hostname = sh(
                             script: """
                                 kubectl get svc application-service \
-                                  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
-                                  2>/dev/null || true
+                                    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+                                    2>/dev/null || true
                             """,
                             returnStdout: true
                         ).trim()
@@ -122,9 +174,13 @@ pipeline {
                     }
 
                     if (hostname) {
+
                         echo "Application URL: http://${hostname}"
+
                     } else {
-                        echo 'LoadBalancer hostname is not available yet. Check the service status.'
+
+                        echo 'LoadBalancer hostname is not available yet.'
+
                         sh 'kubectl get svc application-service'
                     }
                 }
@@ -133,6 +189,7 @@ pipeline {
     }
 
     post {
+
         success {
             echo 'Pipeline completed successfully.'
         }
@@ -146,4 +203,3 @@ pipeline {
         }
     }
 }
-
